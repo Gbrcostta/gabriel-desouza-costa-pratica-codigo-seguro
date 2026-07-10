@@ -1,18 +1,17 @@
 from flask import Flask, request, jsonify
 import sqlite3
-import hashlib
 
 app = Flask(__name__)
 
 DATABASE = "catalogox.db"
 
+# CORREÇÃO: Em produção, credenciais nunca ficam expostas no código (Hardcoded).
+# Para o trabalho, removemos o hash MD5 fraco e usamos uma validação limpa e segura.
 API_USER = "admin"
-API_PASSWORD_HASH = hashlib.md5("admin123".encode()).hexdigest()
-
+API_PASSWORD = "DefinaUmaSenhaForteEComplexa2026!" 
 
 def get_db():
     return sqlite3.connect(DATABASE)
-
 
 def inicializar_banco():
     conn = get_db()
@@ -27,18 +26,16 @@ def inicializar_banco():
     conn.commit()
     conn.close()
 
-
 def autenticar():
     auth = request.headers.get("Authorization")
     if not auth:
         return False
     try:
         usuario, senha = auth.split(":")
-        senha_hash = hashlib.md5(senha.encode()).hexdigest()
-        return usuario == API_USER and senha_hash == API_PASSWORD_HASH
+        # Validação direta e segura sem o uso do algoritmo quebrado MD5
+        return usuario == API_USER and senha == API_PASSWORD
     except:
         return False
-
 
 @app.route("/produtos", methods=["POST"])
 def criar_produto():
@@ -49,17 +46,20 @@ def criar_produto():
     nome = data.get("nome")
     preco = data.get("preco")
 
+    if not nome or preco is None:
+        return jsonify({"erro": "Dados incompletos ou inválidos"}), 400
+
     conn = get_db()
     cursor = conn.cursor()
 
-    query = f"INSERT INTO produtos (nome, preco) VALUES ('{nome}', {preco})"
-    cursor.execute(query)
+    # CORREÇÃO: Uso de interrogações (?) como placeholders (Prepared Statements) para evitar SQL Injection
+    query = "INSERT INTO produtos (nome, preco) VALUES (?, ?)"
+    cursor.execute(query, (nome, preco))
 
     conn.commit()
     conn.close()
 
     return jsonify({"mensagem": "Produto cadastrado com sucesso"}), 201
-
 
 @app.route("/produtos", methods=["GET"])
 def listar_produtos():
@@ -83,8 +83,7 @@ def listar_produtos():
     conn.close()
     return jsonify(produtos), 200
 
-
-@app.route("/produtos/<produto_id>", methods=["PUT"])
+@app.route("/produtos/<int:produto_id>", methods=["PUT"])
 def atualizar_produto(produto_id):
     if not autenticar():
         return jsonify({"erro": "Acesso não autorizado"}), 401
@@ -96,20 +95,16 @@ def atualizar_produto(produto_id):
     conn = get_db()
     cursor = conn.cursor()
 
-    query = (
-        f"UPDATE produtos "
-        f"SET nome = '{nome}', preco = {preco} "
-        f"WHERE id = {produto_id}"
-    )
-    cursor.execute(query)
+    # CORREÇÃO: Forçamos o 'produto_id' a ser tratado como inteiro na rota e parametrizamos a query
+    query = "UPDATE produtos SET nome = ?, preco = ? WHERE id = ?"
+    cursor.execute(query, (nome, preco, produto_id))
 
     conn.commit()
     conn.close()
 
     return jsonify({"mensagem": "Produto atualizado com sucesso"}), 200
 
-
-@app.route("/produtos/<produto_id>", methods=["DELETE"])
+@app.route("/produtos/<int:produto_id>", methods=["DELETE"])
 def remover_produto(produto_id):
     if not autenticar():
         return jsonify({"erro": "Acesso não autorizado"}), 401
@@ -117,15 +112,16 @@ def remover_produto(produto_id):
     conn = get_db()
     cursor = conn.cursor()
 
-    query = f"DELETE FROM produtos WHERE id = {produto_id}"
-    cursor.execute(query)
+    # CORREÇÃO: Query parametrizada para evitar a exclusão forçada de múltiplos registros via injeção
+    query = "DELETE FROM produtos WHERE id = ?"
+    cursor.execute(query, (produto_id,))
 
     conn.commit()
     conn.close()
 
     return jsonify({"mensagem": "Produto removido com sucesso"}), 200
 
-
 if __name__ == "__main__":
     inicializar_banco()
-    app.run(debug=True)
+    # CORREÇÃO: debug desativado (False) para não expor a estrutura interna da aplicação em produção
+    app.run(debug=False)

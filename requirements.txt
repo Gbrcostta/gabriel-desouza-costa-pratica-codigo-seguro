@@ -1,1 +1,3 @@
 Flask==3.0.2
+bandit==1.7.5
+cyclonedx-bom==3.11.0
